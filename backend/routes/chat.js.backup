@@ -1,0 +1,161 @@
+const express  = require('express');
+const router   = express.Router();
+const Anthropic = require('@anthropic-ai/sdk');
+const { pool }  = require('../db');
+const tools     = require('../tools/appointmentTools');
+const { executeTool } = require('../tools/toolExecutor');
+const { sendConfirmationEmail } = require('../utils/email');
+const { sendSMSConfirmation }   = require('../utils/sms');
+require('dotenv').config();
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ── System prompt ────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are Kyra, a warm and professional AI medical receptionist for Kyron Medical Group.
+Today's date is ${new Date().toDateString()}.
+
+You help patients with three workflows:
+1. SCHEDULING APPOINTMENTS – collect all intake data then use tools to find and book a slot
+2. PRESCRIPTION REFILL REQUESTS – log the request, promise 24-hour callback  
+3. OFFICE INFORMATION – address, hours, directions
+
+INTAKE DATA REQUIRED (collect naturally, 1-2 fields at a time):
+- First and last name
+- Date of birth (MM/DD/YYYY)  
+- Phone number
+- Email address
+- Reason for visit / what body part needs care
+
+WORKFLOW — Scheduling:
+1. Greet warmly and ask what brings them in
+2. Ask about the body part / concern to identify the right specialist
+3. Collect remaining intake fields (name, DOB, phone, email)  — do NOT ask all at once
+4. Call get_availability with the body part
+5. Present 3-5 available slots clearly formatted as: "Monday, April 14 at 9:00 AM"
+6. If patient requests a specific day, call get_availability again with preferred_day
+7. Once patient confirms a slot, call book_appointment with ALL collected data
+8. Confirm the booking and mention an email confirmation was sent
+
+SAFETY RULES (strictly enforced):
+- NEVER provide medical advice, diagnoses, treatment suggestions, or medication info
+- If asked for medical advice, say: "I'm not able to provide medical advice. Please speak with your doctor."
+- NEVER discuss pricing, insurance coverage, or billing details — refer to billing dept at (212) 555-0200
+- Only schedule appointments; never cancel or modify existing ones via chat
+- If a patient seems to be in a medical emergency, immediately say: "If this is a medical emergency, please call 911 immediately."
+
+TONE: Warm, concise, professional. Use the patient's first name once you have it.
+FORMAT: Use short paragraphs. For slot lists, use emoji bullets like 📅.
+Keep responses under 120 words unless presenting multiple slots.`;
+
+// ── POST /api/chat/message ───────────────────────────────────
+router.post('/message', async (req, res) => {
+  try {
+    const { message, sessionId } = req.body;
+    if (!message || !sessionId) {
+      return res.status(400).json({ error: 'message and sessionId are required' });
+    }
+
+    // Load or create conversation
+    const { rows } = await pool.query(
+      'SELECT * FROM conversations WHERE session_id=$1', [sessionId]
+    );
+    let conversation = rows[0];
+    let messages     = conversation?.messages || [];
+
+    // Append user turn
+    messages.push({ role: 'user', content: message });
+
+    // ── Agentic loop ─────────────────────────────────────────
+    const notifiers = {
+      sendEmail: sendConfirmationEmail,
+      sendSMS:   sendSMSConfirmation,
+    };
+
+    let loopMessages = [...messages];
+    let finalText    = '';
+    let iterations   = 0;
+
+    while (iterations < 8) {
+      iterations++;
+      const response = await anthropic.messages.create({
+        model:      'claude-opus-4-5',
+        max_tokens: 1024,
+        system:     SYSTEM_PROMPT,
+        tools,
+        messages:   loopMessages,
+      });
+
+      if (response.stop_reason === 'end_turn') {
+        finalText = response.content.find(b => b.type === 'text')?.text || '';
+        loopMessages.push({ role: 'assistant', content: response.content });
+        break;
+      }
+
+      if (response.stop_reason === 'tool_use') {
+        const toolUseBlock = response.content.find(b => b.type === 'tool_use');
+        if (!toolUseBlock) break;
+
+        console.log(`🔧 Tool call: ${toolUseBlock.name}`, JSON.stringify(toolUseBlock.input).slice(0,120));
+        const result = await executeTool(toolUseBlock.name, toolUseBlock.input, notifiers);
+        console.log(`✅ Tool result:`, JSON.stringify(result).slice(0,120));
+
+        loopMessages.push({ role: 'assistant', content: response.content });
+        loopMessages.push({
+          role: 'user',
+          content: [{
+            type:        'tool_result',
+            tool_use_id: toolUseBlock.id,
+            content:     JSON.stringify(result),
+          }],
+        });
+        continue;
+      }
+
+      // Any other stop reason — extract text and break
+      finalText = response.content.find(b => b.type === 'text')?.text || '';
+      break;
+    }
+
+    // Save final assistant turn
+    messages.push({ role: 'assistant', content: finalText });
+
+    // Persist conversation to DB
+    await pool.query(`
+      INSERT INTO conversations (session_id, messages, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (session_id) DO UPDATE
+        SET messages   = $2,
+            updated_at = NOW()
+    `, [sessionId, JSON.stringify(messages)]);
+
+    return res.json({ reply: finalText, sessionId });
+  } catch (err) {
+    console.error('Chat error:', err);
+    return res.status(500).json({
+      error: 'AI service error',
+      reply: 'I apologize — something went wrong. Please try again in a moment.',
+    });
+  }
+});
+
+// ── GET /api/chat/history/:sessionId ────────────────────────
+router.get('/history/:sessionId', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT messages, patient_data, appointment_state FROM conversations WHERE session_id=$1',
+      [req.params.sessionId]
+    );
+    if (!rows.length) return res.json({ messages: [], patientData: {} });
+    return res.json({ messages: rows[0].messages, patientData: rows[0].patient_data });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/chat/history/:sessionId ─────────────────────
+router.delete('/history/:sessionId', async (req, res) => {
+  await pool.query('DELETE FROM conversations WHERE session_id=$1', [req.params.sessionId]);
+  return res.json({ success: true });
+});
+
+module.exports = router;
