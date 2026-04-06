@@ -58,8 +58,8 @@ const tools = [
       parameters: {
         type: 'object',
         properties: {
-          slot_id:      { type: 'number',  description: 'Slot ID from get_availability' },
-          doctor_id:    { type: 'number',  description: 'Doctor ID from get_availability' },
+          slot_id:      { type: 'string',  description: 'Slot ID from get_availability results' },
+          doctor_id:    { type: 'string',  description: 'Doctor ID from get_availability results' },
           patient_name: { type: 'string',  description: 'Full name' },
           dob:          { type: 'string',  description: 'Date of birth MM/DD/YYYY' },
           phone:        { type: 'string',  description: 'Phone number' },
@@ -163,10 +163,10 @@ router.post('/message', async (req, res) => {
           let args = {};
           try { args = JSON.parse(toolCall.function.arguments); } catch {}
 
-          // Fix type casting — model sometimes sends numbers as strings
-          if (args.limit !== undefined)     args.limit     = parseInt(args.limit) || 5;
+          // Always convert slot_id and doctor_id to numbers
           if (args.slot_id !== undefined)   args.slot_id   = parseInt(args.slot_id);
           if (args.doctor_id !== undefined) args.doctor_id = parseInt(args.doctor_id);
+          if (args.limit !== undefined)     args.limit     = parseInt(args.limit) || 5;
 
           console.log(`Tool: ${name}`, JSON.stringify(args).slice(0, 120));
           const result = await executeTool(name, args, notifiers);
