@@ -1,7 +1,9 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://km-webpage-backend.onrender.com',
+  baseURL: import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL + '/api'
+    : 'https://km-webpage-backend.onrender.com/api',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })
