@@ -162,7 +162,12 @@ router.post('/message', async (req, res) => {
           const name = toolCall.function.name;
           let args = {};
           try { args = JSON.parse(toolCall.function.arguments); } catch {}
-          if (args.limit !== undefined) args.limit = parseInt(args.limit) || 5;
+
+          // Fix type casting — model sometimes sends numbers as strings
+          if (args.limit !== undefined)     args.limit     = parseInt(args.limit) || 5;
+          if (args.slot_id !== undefined)   args.slot_id   = parseInt(args.slot_id);
+          if (args.doctor_id !== undefined) args.doctor_id = parseInt(args.doctor_id);
+
           console.log(`Tool: ${name}`, JSON.stringify(args).slice(0, 120));
           const result = await executeTool(name, args, notifiers);
           console.log(`Result:`, JSON.stringify(result).slice(0, 120));
