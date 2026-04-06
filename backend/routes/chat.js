@@ -197,7 +197,7 @@ router.post('/message', async (req, res) => {
       iterations++;
 
       const response = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama3-groq-70b-8192-tool-use-preview',
         max_tokens:  1024,
         temperature: 0.2,
         messages:    loopMessages,
