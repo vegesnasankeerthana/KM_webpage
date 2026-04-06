@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const router  = express.Router();
 const Groq    = require('groq-sdk');
@@ -5,7 +6,7 @@ const { pool } = require('../db');
 const { executeTool } = require('../tools/toolExecutor');
 const { sendConfirmationEmail } = require('../utils/email');
 const { sendSMSConfirmation }   = require('../utils/sms');
-require('dotenv').config();
+
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
