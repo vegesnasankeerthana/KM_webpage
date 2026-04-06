@@ -196,65 +196,6 @@ npm run dev
 
 Open http://localhost:5173 in your browser 🎉
 
----
-
-## 🚀 DEPLOYING TO AWS EC2 (Production)
-
-### STEP 7 — Create AWS RDS PostgreSQL Database
-
-1. Log in to https://console.aws.amazon.com
-2. Go to **RDS** → **Create database**
-3. Settings:
-   - Engine: **PostgreSQL 15**
-   - Template: **Free tier**
-   - DB instance identifier: `kyron-medical-db`
-   - Master username: `postgres`
-   - Master password: (choose a strong password, save it!)
-   - Instance: `db.t3.micro`
-   - Storage: `20 GB`
-   - **Publicly accessible: YES** (for setup; set to NO later)
-4. Click **Create database** — takes 5 min
-5. Once available, copy the **Endpoint** (looks like `kyron-medical-db.xxxx.us-east-1.rds.amazonaws.com`)
-6. Go to its **Security Group** → **Inbound rules** → Add rule:
-   - Type: `PostgreSQL`, Port: `5432`, Source: `0.0.0.0/0` (temporary for setup)
-
----
-
-### STEP 8 — Launch EC2 Instance
-
-1. Go to **EC2** → **Launch Instance**
-2. Settings:
-   - Name: `kyron-medical-server`
-   - AMI: **Ubuntu 22.04 LTS**
-   - Instance type: `t3.small` ($0.02/hr) or `t2.micro` (free tier)
-   - Key pair: **Create new** → name it `kyron-key` → download `.pem` file → **SAVE IT SAFELY**
-   - Network settings → **Edit** → Add inbound rules:
-     - SSH (22): My IP
-     - HTTP (80): Anywhere
-     - HTTPS (443): Anywhere
-     - Custom TCP (3001): Anywhere (optional, for testing)
-3. Click **Launch Instance**
-4. Copy the **Public IPv4 address**
-
----
-
-### STEP 9 — SSH Into EC2 & Set Up Server
-
-```bash
-# On your local machine:
-chmod 400 ~/Downloads/kyron-key.pem
-
-# SSH in (replace with your EC2 public IP):
-ssh -i ~/Downloads/kyron-key.pem ubuntu@YOUR_EC2_IP
-
-# ── Once inside the EC2 server ────────────────────────────────
-
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs git nginx
-
-# Install PM2 (process manager)
-sudo npm install -g pm2
 
 # Clone your repo
 cd /home/ubuntu
@@ -275,47 +216,7 @@ npm install
 npm run build
 # This creates frontend/dist/ folder
 
-# Start backend with PM2
-cd ../backend
-pm2 start server.js --name kyron-backend
-pm2 startup          # Follow the printed command to enable auto-start
-pm2 save
-```
-
----
-
-### STEP 10 — Configure Nginx (Reverse Proxy + HTTPS)
-
-```bash
-# Create Nginx config
-sudo nano /etc/nginx/sites-available/kyron
-
-# Paste this (replace yourdomain.com with your actual domain or EC2 IP):
-```
-
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com www.yourdomain.com;
-
-    # API → Node.js backend
-    location /api/ {
-        proxy_pass         http://localhost:3001;
-        proxy_http_version 1.1;
-        proxy_set_header   Upgrade    $http_upgrade;
-        proxy_set_header   Connection 'upgrade';
-        proxy_set_header   Host       $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # React frontend (static files)
-    location / {
-        root  /home/ubuntu/kyron-medical/frontend/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
+#
 
 ```bash
 # Enable the site
@@ -402,32 +303,6 @@ Use the tools available to check availability and book appointments.
 4. Under **Phone Numbers** → buy/import a number → copy the Phone Number ID
 5. Fill in `VAPI_API_KEY`, `VAPI_ASSISTANT_ID`, `VAPI_PHONE_NUMBER_ID` in your `.env`
 
----
-
-## 🛠 Tech Stack Summary
-
-| Layer      | Technology                    |
-|------------|-------------------------------|
-| Frontend   | React 18 + Vite + Tailwind CSS |
-| Backend    | Node.js + Express             |
-| AI         | Anthropic Claude (claude-opus-4-5) |
-| Database   | PostgreSQL (AWS RDS)          |
-| Hosting    | AWS EC2 + Nginx               |
-| HTTPS      | Let's Encrypt (Certbot)       |
-| Email      | Nodemailer + Gmail SMTP       |
-| SMS        | Twilio                        |
-| Voice AI   | Vapi.ai                       |
-| Process Mgr| PM2                           |
-
----
-
-## 🆘 Common Issues
-
-| Problem | Fix |
-|---------|-----|
-| `ECONNREFUSED 5432` | PostgreSQL not running. Run `sudo systemctl start postgresql` |
-| `AI not responding` | Check `ANTHROPIC_API_KEY` in `.env` |
-| `CORS error` | Check `FRONTEND_URL` in backend `.env` matches your frontend URL |
-| White screen | Run `npm run build` in frontend, check browser console |
-| EC2 unreachable | Check Security Group has port 80/443 open |
-| PM2 not starting | Run `pm2 logs kyron-backend` to see errors |
+# live links
+https://km-webpage-frontend.onrender.com- frontend
+https://km-webpage-backend.onrender.com-backend
