@@ -156,6 +156,10 @@ function cleanResponse(text) {
     .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
     .replace(/```json[\s\S]*?```/g, '')
     .replace(/\[tool_use[\s\S]*?\]/g, '')
+    .replace(/\{"body_part"[\s\S]*?\}/g, '')
+    .replace(/\{"slot_id"[\s\S]*?\}/g, '')
+    .replace(/\{"patient_name"[\s\S]*?\}/g, '')
+    .replace(/\{"\w+":[\s\S]*?\}/g, '')
     .trim();
 }
 
