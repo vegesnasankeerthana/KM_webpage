@@ -65,3 +65,11 @@ async function start() {
 }
 
 start();
+if (process.env.NODE_ENV === 'production') {
+  setInterval(() => {
+    require('https').get(
+      'https://km-webpage-backend.onrender.com/api/health',
+      () => console.log('Keep-alive ping')
+    );
+  }, 14 * 60 * 1000);
+}
