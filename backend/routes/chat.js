@@ -146,7 +146,7 @@ router.post('/message', async (req, res) => {
       iterations++;
 
       const response = await groq.chat.completions.create({
-        model:       'gemma2-9b-it',
+        model:       'llama-3.1-8b-instant',
         max_tokens:  1024,
         temperature: 0.2,
         messages:    loopMessages,
@@ -199,7 +199,8 @@ router.post('/message', async (req, res) => {
     return res.json({ reply: finalText, sessionId });
 
   } catch (err) {
-    console.error('Chat error:', err.message);
+    console.error('Chat error:', err.response?.data || err);
+    
     return res.status(500).json({
       error: 'AI service error',
       reply: 'I apologize — something went wrong. Please try again in a moment.',
