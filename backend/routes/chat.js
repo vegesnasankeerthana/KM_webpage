@@ -7,92 +7,44 @@ const { executeTool } = require('../tools/toolExecutor');
 const { sendConfirmationEmail } = require('../utils/email');
 const { sendSMSConfirmation }   = require('../utils/sms');
 
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are Kyra, a warm and professional AI medical receptionist for Kyron Medical Group.
-Today's date is ${new Date().toDateString()}.
+const SYSTEM_PROMPT = `You are Kyra, a medical receptionist for Kyron Medical Group. Today: ${new Date().toDateString()}.
 
-You help patients with THREE workflows:
-1. SCHEDULING APPOINTMENTS
-2. PRESCRIPTION REFILL REQUESTS
-3. OFFICE INFORMATION
+DOCTORS:
+- Dr. Sarah Chen: Cardiologist (heart, chest, blood pressure)
+- Dr. James Miller: Orthopedist (bones, joints, back, knee)
+- Dr. Priya Patel: Dermatologist (skin, rash, acne)
+- Dr. Robert Kim: Neurologist (headaches, migraines, dizziness)
 
-DOCTORS & SPECIALTIES:
-- Dr. Sarah Chen → Cardiologist (heart, chest pain, blood pressure, palpitations)
-- Dr. James Miller → Orthopedist (bones, joints, back pain, knee, shoulder, spine)
-- Dr. Priya Patel → Dermatologist (skin, rash, acne, eczema, moles)
-- Dr. Robert Kim → Neurologist (brain, headaches, migraines, dizziness, seizures)
+WORKFLOW - collect these ONE at a time BEFORE calling any tool:
+1. What brings them in
+2. Body part/concern
+3. Full name
+4. Date of birth (MM/DD/YYYY)
+5. Phone number
+6. Email address
 
-══════════════════════════════════════
-SCHEDULING WORKFLOW — FOLLOW EXACTLY
-══════════════════════════════════════
+Only after collecting ALL 6 items, call get_availability.
+After patient picks a slot and confirms, call book_appointment.
 
-STAGE 1 — COLLECT INFORMATION (do this BEFORE calling any tool):
-- First ask: "What brings you in today?"
-- Then ask: "Which part of your body is concerning you?"
-- Then ask: "May I have your first and last name?"
-- Then ask: "What is your date of birth? (MM/DD/YYYY)"
-- Then ask: "What is the best phone number to reach you?"
-- Then ask: "And your email address for the confirmation?"
+RULES:
+- Never show JSON, tool names, or code to patient
+- Never give medical advice
+- Keep responses under 80 words
+- One question per message`;
 
-STAGE 2 — FIND SLOTS (only after ALL 6 fields collected):
-- Call get_availability tool with body_part
-- Present slots as: "📅 Monday, April 7 at 9:00 AM"
-- Show 3-5 slots maximum
-- If patient wants specific day, call get_availability again with preferred_day
-
-STAGE 3 — CONFIRM AND BOOK:
-- Once patient picks a slot, say: "Just to confirm — [date/time] with [doctor]. Shall I book this?"
-- After patient says yes, call book_appointment with ALL collected data
-- Confirm: "Your appointment is booked! A confirmation email has been sent to [email]. See you on [date]!"
-
-══════════════════════════════════════
-STRICT RULES — NEVER BREAK THESE
-══════════════════════════════════════
-1. NEVER call get_availability before collecting name, DOB, phone AND email
-2. NEVER ask multiple fields at once — ONE question per response
-3. NEVER show function names, tool names, JSON, or code in responses
-4. NEVER give medical advice — say "Please speak with your doctor"
-5. NEVER discuss pricing or insurance — refer to (212) 555-0200
-6. Keep all responses under 80 words
-7. Use patient first name warmly once collected
-8. If body part not treated: "We don't have a specialist for that. We treat heart, bones/joints, skin, and neurological conditions."
-9. Medical emergency: "If this is a medical emergency, please call 911 immediately."
-
-══════════════════════════════════════
-PRESCRIPTION REFILL WORKFLOW
-══════════════════════════════════════
-1. Ask for patient name
-2. Ask for medication name
-3. Call check_prescription_refill tool
-4. Say: "Your refill request for [medication] has been logged. Our clinical team will contact you within 24 hours."
-
-══════════════════════════════════════
-OFFICE INFORMATION
-══════════════════════════════════════
-Address: 123 Medical Center Drive, Suite 400, New York, NY 10001
-Hours: Monday-Friday 8:00 AM - 6:00 PM | Saturday 9:00 AM - 2:00 PM | Sunday Closed
-Phone: (212) 555-0100`;
-
-// ── Tool definitions — NO limit parameter to avoid type errors ──
 const tools = [
   {
     type: 'function',
     function: {
       name: 'get_availability',
-      description: 'Get available appointment slots. Only call after collecting patient name, DOB, phone, and email.',
+      description: 'Get available appointment slots based on body part. Only call after collecting all patient info.',
       parameters: {
         type: 'object',
         properties: {
-          body_part: {
-            type: 'string',
-            description: 'Body part or symptom the patient described e.g. heart, knee, skin rash'
-          },
-          preferred_day: {
-            type: 'string',
-            description: 'Optional preferred day e.g. Monday, Tuesday, morning, afternoon'
-          },
+          body_part: { type: 'string', description: 'Body part or symptom e.g. heart, knee, skin' },
+          preferred_day: { type: 'string', description: 'Optional day preference e.g. Monday, morning' },
         },
         required: ['body_part'],
       },
@@ -102,19 +54,19 @@ const tools = [
     type: 'function',
     function: {
       name: 'book_appointment',
-      description: 'Book the appointment after patient explicitly confirms the slot. Requires all patient data.',
+      description: 'Book appointment after patient confirms. Requires all patient data.',
       parameters: {
         type: 'object',
         properties: {
-          slot_id:      { type: 'number',  description: 'Slot ID from get_availability results' },
-          doctor_id:    { type: 'number',  description: 'Doctor ID from get_availability results' },
-          patient_name: { type: 'string',  description: 'Patient full first and last name' },
-          dob:          { type: 'string',  description: 'Date of birth in MM/DD/YYYY format' },
-          phone:        { type: 'string',  description: 'Patient phone number' },
-          email:        { type: 'string',  description: 'Patient email address' },
-          reason:       { type: 'string',  description: 'Reason for the appointment' },
-          session_id:   { type: 'string',  description: 'Current chat session ID' },
-          sms_opt_in:   { type: 'boolean', description: 'Whether patient agreed to SMS notifications' },
+          slot_id:      { type: 'number',  description: 'Slot ID from get_availability' },
+          doctor_id:    { type: 'number',  description: 'Doctor ID from get_availability' },
+          patient_name: { type: 'string',  description: 'Full name' },
+          dob:          { type: 'string',  description: 'Date of birth MM/DD/YYYY' },
+          phone:        { type: 'string',  description: 'Phone number' },
+          email:        { type: 'string',  description: 'Email address' },
+          reason:       { type: 'string',  description: 'Reason for visit' },
+          session_id:   { type: 'string',  description: 'Session ID' },
+          sms_opt_in:   { type: 'boolean', description: 'SMS opt in' },
         },
         required: ['slot_id', 'doctor_id', 'patient_name', 'dob', 'phone', 'email', 'reason', 'session_id'],
       },
@@ -124,7 +76,7 @@ const tools = [
     type: 'function',
     function: {
       name: 'get_office_info',
-      description: 'Get the practice office address, hours of operation, and contact information',
+      description: 'Get office address, hours, and contact information',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -132,13 +84,13 @@ const tools = [
     type: 'function',
     function: {
       name: 'check_prescription_refill',
-      description: 'Log a prescription refill request for a patient',
+      description: 'Log a prescription refill request',
       parameters: {
         type: 'object',
         properties: {
-          patient_name: { type: 'string', description: 'Full name of the patient' },
-          phone:        { type: 'string', description: 'Patient phone number' },
-          medication:   { type: 'string', description: 'Name of the medication to refill' },
+          patient_name: { type: 'string' },
+          phone:        { type: 'string' },
+          medication:   { type: 'string' },
         },
         required: ['patient_name', 'medication'],
       },
@@ -146,7 +98,6 @@ const tools = [
   },
 ];
 
-// ── Strip leaked function/tool syntax from AI output ─────────
 function cleanResponse(text) {
   if (!text) return '';
   return text
@@ -158,12 +109,10 @@ function cleanResponse(text) {
     .replace(/\[tool_use[\s\S]*?\]/g, '')
     .replace(/\{"body_part"[\s\S]*?\}/g, '')
     .replace(/\{"slot_id"[\s\S]*?\}/g, '')
-    .replace(/\{"patient_name"[\s\S]*?\}/g, '')
-    .replace(/\{"\w+":[\s\S]*?\}/g, '')
+    .replace(/\{"\w+":\s*"[\s\S]*?\}/g, '')
     .trim();
 }
 
-// ── POST /api/chat/message ───────────────────────────────────
 router.post('/message', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
@@ -197,7 +146,7 @@ router.post('/message', async (req, res) => {
       iterations++;
 
       const response = await groq.chat.completions.create({
-        model: 'llama3-groq-70b-8192-tool-use-preview',
+        model:       'llama-3.3-70b-versatile',
         max_tokens:  1024,
         temperature: 0.2,
         messages:    loopMessages,
@@ -213,14 +162,10 @@ router.post('/message', async (req, res) => {
           const name = toolCall.function.name;
           let args = {};
           try { args = JSON.parse(toolCall.function.arguments); } catch {}
-
-          // Fix: ensure limit is always a number if present
           if (args.limit !== undefined) args.limit = parseInt(args.limit) || 5;
-
-          console.log(`🔧 Tool: ${name}`, JSON.stringify(args).slice(0, 120));
+          console.log(`Tool: ${name}`, JSON.stringify(args).slice(0, 120));
           const result = await executeTool(name, args, notifiers);
-          console.log(`✅ Result:`, JSON.stringify(result).slice(0, 120));
-
+          console.log(`Result:`, JSON.stringify(result).slice(0, 120));
           loopMessages.push({
             role:         'tool',
             tool_call_id: toolCall.id,
@@ -257,7 +202,6 @@ router.post('/message', async (req, res) => {
   }
 });
 
-// ── GET /api/chat/history/:sessionId ────────────────────────
 router.get('/history/:sessionId', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -271,7 +215,6 @@ router.get('/history/:sessionId', async (req, res) => {
   }
 });
 
-// ── DELETE /api/chat/history/:sessionId ─────────────────────
 router.delete('/history/:sessionId', async (req, res) => {
   await pool.query('DELETE FROM conversations WHERE session_id=$1', [req.params.sessionId]);
   return res.json({ success: true });
